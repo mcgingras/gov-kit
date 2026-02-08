@@ -29,9 +29,12 @@ const allTransactionConfigs = allActions.flatMap(
 const ctx = { chainId: 1 };
 
 // Some sample raw transactions for the decode demo
+// 1. ENS token transfer (transfer-ens action)
+// 2. USDC via Nouns payer (one-time-payment usdc action)
+// 3. Plain ETH transfer (one-time-payment eth action)
 const SAMPLE_RAW_TRANSACTIONS: RawTransaction[] = [
   {
-    target: "0x65A3870F48B5237f27f674Ec42eA1E017E111D63",
+    target: "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72",
     signature: "transfer(address,uint256)",
     calldata: encodeAbiParameters(
       [{ type: "address" }, { type: "uint256" }],
@@ -254,7 +257,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <GovKitProvider
       config={{
-        etherscanApiKey: "1JAYYKMR2MFEEGA3E4F32B7VYZB9AYXTJ2",
+        etherscanApiKey: import.meta.env.VITE_ETHERSCAN_API_KEY ?? "",
         actions: allActions,
       }}
     >

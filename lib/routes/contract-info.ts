@@ -1,9 +1,9 @@
-import { ContractInfo } from "../_types";
+import { ContractInfo } from "../types";
 
 const etherscanRequest = (query: Record<any, any>, etherscanApiKey: string) => {
-  const searchParams = new URLSearchParams(query);
+  const searchParams = new URLSearchParams({ chainid: "1", ...query });
   return new Request(
-    `https://api.etherscan.io/api?apikey=${etherscanApiKey}&${searchParams}`
+    `https://api.etherscan.io/v2/api?apikey=${etherscanApiKey}&${searchParams}`
   );
 };
 

@@ -4,7 +4,7 @@ import { defineContractCallTransaction } from "../../utils/define-contract-call-
 import TransferENSFromTreasuryForm, { dataToAction } from "./Form";
 import { defineAction } from "../../utils/define-action";
 
-const ENS_TOKEN_ADDRESS = "0x65A3870F48B5237f27f674Ec42eA1E017E111D63";
+const ENS_TOKEN_ADDRESS = "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72";
 
 export const transferENSTransactionConfig = defineContractCallTransaction<TransferENSTransaction>({
   type: "transfer-ens",
