@@ -8,7 +8,7 @@ import {
 } from "viem";
 import { useFormContext, Controller } from "react-hook-form";
 import { getContractInfo } from "../../routes/contract-info";
-import { ContractInfo } from "../../_types";
+import { ContractInfo } from "../../types";
 import { useGovKitContext } from "../../components/GovKitProvider";
 
 export const dataToAction = (data: any) => {

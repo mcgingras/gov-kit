@@ -1,18 +1,4 @@
 import { AbiParameter } from "viem";
-import {
-  OneTimePaymentAction,
-  TransferTransaction,
-  UsdcTransferViaPayerTransaction,
-} from "./actions/NounsOneTimePayment/types";
-import {
-  CustomTransactionAction,
-  FunctionCallTransaction,
-  PayableFunctionCallTransaction,
-} from "./actions/CustomTransaction/types";
-import {
-  TransferENSFromTreasuryAction,
-  TransferENSTransaction,
-} from "./actions/TransferENSFromTreasury/types";
 
 export type RawTransaction = {
   target: `0x${string}`;
@@ -28,6 +14,18 @@ export type RawTransactions = {
   calldatas: `0x${string}`[];
 };
 
+export type ParserContext = {
+  chainId: number;
+};
+
+export type ContractInfo = {
+  name: string;
+  abi: any;
+  isProxy: boolean;
+  implementationAddress: `0x${string}`;
+  implementationAbi: any;
+};
+
 export type ParsedFunctionCallTransaction<T> = T & {
   functionName?: string;
   functionInputs?: any[];
@@ -36,10 +34,12 @@ export type ParsedFunctionCallTransaction<T> = T & {
 
 export type TransactionConfig<T extends { type: string }> = {
   type: T["type"];
-  parse: (t: RawTransaction, { chainId }: { chainId: number }) => T | false;
-  unparse: (t: T, { chainId }: { chainId: number }) => RawTransaction;
-  transactionCodeBlock: (t: ParsedFunctionCallTransaction<T>) => JSX.Element;
-  transactionComment: (t: T) => JSX.Element | undefined;
+  specificity?: number;
+  matches: (t: RawTransaction, ctx: ParserContext) => boolean;
+  decode: (t: RawTransaction, ctx: ParserContext) => T;
+  encode: (t: T, ctx: ParserContext) => RawTransaction;
+  transactionCodeBlock?: (t: ParsedFunctionCallTransaction<T>) => JSX.Element;
+  transactionComment?: (t: T) => JSX.Element | undefined;
 };
 
 export interface BaseAction {
@@ -51,47 +51,16 @@ export type ActionConfig<
   T extends BaseReadableTransaction
 > = {
   type: A["type"];
+  specificity?: number;
   form: React.FC;
   formdataToAction: (data: any) => A;
-  // wish I could type this better, like TransactionConfig<T>
-  getTransactions: () => TransactionConfig<any>[];
-  resolveAction: (a: A) => T[];
-  buildAction: (r: any[]) => { action: A; remainingTransactions: any[] } | null;
+  transactions?: TransactionConfig<any>[];
+  getTransactions?: () => TransactionConfig<any>[];
+  actionToTransactions: (a: A, ctx: ParserContext) => T[];
+  transactionsToAction: (r: T[], ctx: ParserContext) => { action: A; consumed: number } | null;
   actionSummary: (a: A) => JSX.Element;
 };
-
-export type Action =
-  | OneTimePaymentAction
-  | CustomTransactionAction
-  | TransferENSFromTreasuryAction;
 
 export interface BaseReadableTransaction {
   type: string;
 }
-
-export type ReadableTransaction =
-  | TransferTransaction
-  | UsdcTransferViaPayerTransaction
-  | FunctionCallTransaction
-  | PayableFunctionCallTransaction
-  | TransferENSTransaction;
-
-export type OneTimePaymentActionConfig = ActionConfig<
-  OneTimePaymentAction,
-  TransferTransaction | UsdcTransferViaPayerTransaction
->;
-
-export type CustomTransactionActionConfig = ActionConfig<
-  CustomTransactionAction,
-  FunctionCallTransaction | PayableFunctionCallTransaction
->;
-
-export type TransferENSFromTreasuryActionConfig = ActionConfig<
-  TransferENSFromTreasuryAction,
-  TransferENSTransaction
->;
-
-export type TypedActionConfig =
-  | OneTimePaymentActionConfig
-  | CustomTransactionActionConfig
-  | TransferENSFromTreasuryActionConfig;

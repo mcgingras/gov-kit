@@ -1,130 +1,74 @@
 import {
   parseUnits,
   parseEther,
-  encodeAbiParameters,
   formatEther,
   formatUnits,
 } from "viem";
-import { TransactionConfig, ActionConfig } from "../../types";
+import { ParserContext } from "../../types";
 import {
   TransferTransaction,
   UsdcTransferViaPayerTransaction,
   OneTimePaymentAction,
 } from "./types";
 import { resolveIdentifier } from "../../utils/contracts";
-import {
-  decimalsByCurrency,
-  decodeCalldataWithSignature,
-} from "../../utils/transactions";
-import { FunctionCallCodeBlock } from "../../components/FunctionCallCodeBlock";
+import { decimalsByCurrency } from "../../utils/transactions";
 import { UnparsedFunctionCallCodeBlock } from "../../components/UnparsedFunctionCallCodeBlock";
-import { normalizeSignature } from "../../utils/transactions";
+import { defineContractCallTransaction } from "../../utils/define-contract-call-transaction";
 import OneTimePaymentForm, { dataToAction } from "./Form";
+import { defineTransaction, defineAction } from "../../utils/define-action";
 
-const transferTransactionConfig: TransactionConfig<TransferTransaction> = {
+const transferTransactionConfig = defineTransaction<TransferTransaction>({
   type: "transfer",
-  parse: (data) => {
-    const isEthTransfer = data.signature == "" && data.calldata === "0x";
-
-    if (isEthTransfer)
-      return {
-        type: "transfer",
-        target: data.target,
-        value: BigInt(data.value),
-      };
-
-    return false;
+  specificity: 1,
+  matches: (data) => {
+    return data.signature === "" && data.calldata === "0x";
   },
-  unparse: (t) => {
-    return {
-      target: t.target,
-      value: t.value,
-      signature: "",
-      calldata: "0x",
-    };
-  },
+  decode: (data) => ({
+    type: "transfer",
+    target: data.target,
+    value: BigInt(data.value),
+  }),
+  encode: (t) => ({
+    target: t.target,
+    value: t.value,
+    signature: "",
+    calldata: "0x",
+  }),
   transactionCodeBlock: (t) => {
     return <UnparsedFunctionCallCodeBlock transaction={t} />;
   },
   transactionComment: () => {
     return <p>No comment</p>;
   },
-};
+});
 
-export const usdcTransferViaPayerTransactionConfig: TransactionConfig<UsdcTransferViaPayerTransaction> =
+export const usdcTransferViaPayerTransactionConfig = defineContractCallTransaction<UsdcTransferViaPayerTransaction>(
   {
     type: "usdc-transfer-via-payer",
-    parse: (rt, { chainId }: { chainId: number }) => {
-      const nounsPayerContract = resolveIdentifier(chainId, "payer");
-
-      const {
-        name: functionName,
-        inputs: functionInputs,
-        inputTypes: functionInputTypes,
-      } = decodeCalldataWithSignature({
-        signature: rt.signature,
-        calldata: rt.calldata,
-      });
-
-      if (
-        rt.target === nounsPayerContract.address &&
-        normalizeSignature(rt.signature) ===
-          normalizeSignature("sendOrRegisterDebt(address,uint256)")
-      ) {
-        const receiverAddress = functionInputs[0].toLowerCase();
-
-        return {
-          type: "usdc-transfer-via-payer",
-          target: rt.target as `0x${string}`,
-          functionName,
-          functionInputs,
-          functionInputTypes,
-          receiverAddress: receiverAddress,
-          usdcAmount: BigInt(functionInputs[1]),
-        };
-      }
-
-      return false;
+    target: (ctx: ParserContext) => {
+      const nounsPayerContract = resolveIdentifier(ctx.chainId, "payer");
+      return nounsPayerContract.address;
     },
-    unparse: (t, { chainId }: { chainId: number }) => {
-      const nounsPayerContract = resolveIdentifier(chainId, "payer");
-      return {
-        target: nounsPayerContract.address,
-        value: "0",
-        signature: "sendOrRegisterDebt(address,uint256)",
-        calldata: encodeAbiParameters(
-          [{ type: "address" }, { type: "uint256" }],
-          [t.receiverAddress, t.usdcAmount]
-        ),
-      };
-    },
-    transactionCodeBlock: (t) => {
-      return (
-        <FunctionCallCodeBlock
-          target={t.target}
-          name={t.functionName!}
-          inputs={t.functionInputs!}
-          value={t.usdcAmount}
-          inputTypes={t.functionInputTypes!}
-        />
-      );
-    },
-    transactionComment: () => {
-      return undefined;
-    },
-  };
+    signature: "sendOrRegisterDebt(address,uint256)",
+    decode: (target, args) => ({
+      type: "usdc-transfer-via-payer",
+      target: target as `0x${string}`,
+      receiverAddress: (args[0] as string).toLowerCase() as `0x${string}`,
+      usdcAmount: BigInt(args[1]),
+    }),
+    encode: (t) => ({ args: [t.receiverAddress, t.usdcAmount] }),
+  }
+);
 
-export const OneTimePaymentActionConfig: ActionConfig<
+export const OneTimePaymentActionConfig = defineAction<
   OneTimePaymentAction,
   TransferTransaction | UsdcTransferViaPayerTransaction
-> = {
+>({
   type: "one-time-payment",
+  transactions: [transferTransactionConfig, usdcTransferViaPayerTransactionConfig],
   form: () => <OneTimePaymentForm />,
   formdataToAction: dataToAction,
-  getTransactions: () => {
-    return [transferTransactionConfig, usdcTransferViaPayerTransactionConfig];
-  },
-  resolveAction: (a) => {
+  actionToTransactions: (a) => {
     switch (a.currency) {
       case "eth":
         return [
@@ -144,38 +88,29 @@ export const OneTimePaymentActionConfig: ActionConfig<
           },
         ];
       default:
-        throw new Error();
+        throw new Error("Unknown currency: " + a.currency);
     }
   },
-  buildAction: (r) => {
-    let remainingTransactions = r;
-
-    const transferTx = remainingTransactions.find(
+  transactionsToAction: (r) => {
+    const transferTx = r.find(
       (t) => t.type === "transfer"
     ) as TransferTransaction | null;
 
     if (transferTx != null) {
-      remainingTransactions = remainingTransactions.filter(
-        (t) => t !== transferTx
-      );
       const action: OneTimePaymentAction = {
         type: "one-time-payment",
         target: transferTx.target,
         currency: "eth",
         amount: formatEther(transferTx.value),
-        // firstTransactionIndex: getTransactionIndex(transferTx),
       };
-      return { action, remainingTransactions };
+      return { action, consumed: 1 };
     }
 
-    const usdcTransferTx = remainingTransactions.find(
+    const usdcTransferTx = r.find(
       (t) => t.type === "usdc-transfer-via-payer"
     ) as UsdcTransferViaPayerTransaction | null;
 
     if (usdcTransferTx != null) {
-      remainingTransactions = remainingTransactions.filter(
-        (t) => t !== usdcTransferTx
-      );
       const action: OneTimePaymentAction = {
         type: "one-time-payment",
         target: usdcTransferTx.receiverAddress,
@@ -184,22 +119,19 @@ export const OneTimePaymentActionConfig: ActionConfig<
           usdcTransferTx.usdcAmount,
           decimalsByCurrency["usdc"]
         ),
-        // firstTransactionIndex: getTransactionIndex(usdcTransferTx),
       };
-      return { action, remainingTransactions };
+      return { action, consumed: 1 };
     }
 
     return null;
   },
-  actionSummary: (a) => {
-    return (
-      <>
-        Transfer{" "}
-        <em>
-          {a.amount} {a.currency.toUpperCase()}
-        </em>{" "}
-        to <em>{a.target}</em>
-      </>
-    );
-  },
-};
+  actionSummary: (a) => (
+    <>
+      Transfer{" "}
+      <em>
+        {a.amount} {a.currency.toUpperCase()}
+      </em>{" "}
+      to <em>{a.target}</em>
+    </>
+  ),
+});

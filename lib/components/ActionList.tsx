@@ -1,41 +1,8 @@
 import { useState } from "react";
-import { formatUnits } from "viem";
-import { Action, ReadableTransaction } from "../types";
+import { BaseAction, BaseReadableTransaction } from "../types";
 import { useGovKitContext } from "./GovKitProvider";
 
-// used as action summary for custom transaction...
-export const TransactionExplanation = ({
-  transaction: t,
-}: {
-  transaction: ReadableTransaction;
-}) => {
-  switch (t.type) {
-    case "transfer":
-      return (
-        <>
-          Transfer <em>{formatUnits(t.value, 18)} ETH</em> to{" "}
-          <em>{t.target}</em>
-        </>
-      );
-
-    case "usdc-transfer-via-payer":
-      return (
-        <>
-          Transfer{" "}
-          <em>
-            {parseFloat(formatUnits(t.usdcAmount, 6)).toLocaleString()} USDC
-          </em>{" "}
-          to <em>{t.receiverAddress}</em>
-        </>
-      );
-
-    default:
-      // @ts-ignore
-      throw new Error(`Unknown transaction type: "${t.type}"`);
-  }
-};
-
-export const ActionListItem = ({ action }: { action: Action }) => {
+export const ActionListItem = ({ action }: { action: BaseAction }) => {
   const [expanded, setExpanded] = useState(false);
   const { actions } = useGovKitContext();
 
@@ -44,8 +11,11 @@ export const ActionListItem = ({ action }: { action: Action }) => {
     throw new Error(`Unknown action type: "${action.type}"`);
   }
 
-  const actionTransactionConfigs = actionConfig.getTransactions();
-  const actionTransactions = actionConfig.resolveAction(action as any);
+  const actionTransactionConfigs =
+    actionConfig.transactions ?? actionConfig.getTransactions?.() ?? [];
+  const actionTransactions = actionConfig.actionToTransactions(action as any, {
+    chainId: 1,
+  });
   const ActionSummary = actionConfig.actionSummary(action as any);
 
   return (
@@ -56,7 +26,7 @@ export const ActionListItem = ({ action }: { action: Action }) => {
       </button>
       {expanded && (
         <ul className="space-y-4">
-          {actionTransactions.map((t, i) => {
+          {actionTransactions.map((t: BaseReadableTransaction, i: number) => {
             const transactionConfig = actionTransactionConfigs.find(
               (atc) => atc.type === t.type
             );
@@ -64,15 +34,15 @@ export const ActionListItem = ({ action }: { action: Action }) => {
               throw new Error(`Unknown transaction type: "${t.type}"`);
             }
 
-            const parsed = transactionConfig.parse(
-              transactionConfig.unparse(t, { chainId: 1 }),
-              { chainId: 1 }
-            );
-            const Comment = transactionConfig.transactionComment(t);
-            const CodeBlock = transactionConfig.transactionCodeBlock(parsed);
+            // Round-trip through encode/decode to get parsed metadata
+            const raw = transactionConfig.encode(t, { chainId: 1 });
+            const parsed = transactionConfig.decode(raw, { chainId: 1 });
+
+            const Comment = transactionConfig.transactionComment?.(t);
+            const CodeBlock = transactionConfig.transactionCodeBlock?.(parsed);
             return (
               <li key={i}>
-                {CodeBlock}
+                {CodeBlock != null && CodeBlock}
                 {Comment != null && Comment}
               </li>
             );
@@ -83,7 +53,7 @@ export const ActionListItem = ({ action }: { action: Action }) => {
   );
 };
 
-export const ActionList = ({ actions }: { actions: Action[] }) => {
+export const ActionList = ({ actions }: { actions: BaseAction[] }) => {
   return (
     <>
       <h1>Actions</h1>

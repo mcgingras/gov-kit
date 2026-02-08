@@ -1,4 +1,4 @@
-import { TransactionConfig, ActionConfig } from "../../types";
+import { ParserContext } from "../../types";
 import {
   CustomTransactionAction,
   FunctionCallTransaction,
@@ -13,28 +13,26 @@ import {
 } from "viem";
 import { AbiFunction } from "viem";
 import { decodeCalldataWithSignature } from "../../utils/transactions";
-import { OneTimePaymentActionConfig } from "../NounsOneTimePayment";
-import TransactionParser from "../../utils/parser";
 import { formatAbiParameter } from "abitype";
 import { FunctionCallCodeBlock } from "../../components/FunctionCallCodeBlock";
+import { defineTransaction, defineAction } from "../../utils/define-action";
 
-export const FunctionCallTransactionConfig: TransactionConfig<FunctionCallTransaction> =
+export const FunctionCallTransactionConfig = defineTransaction<FunctionCallTransaction>(
   {
     type: "function-call",
-    parse: (rt) => {
+    matches: (rt) => {
+      return BigInt(rt.value) === 0n && rt.signature !== "";
+    },
+    decode: (rt) => {
       const {
         name: functionName,
         inputs: functionInputs,
         inputTypes: functionInputTypes,
-        // calldataDecodingFailed,
       } = decodeCalldataWithSignature({
         signature: rt.signature,
         calldata: rt.calldata,
       });
 
-      if (BigInt(rt.value) > 0) {
-        return false;
-      }
       return {
         type: "function-call",
         target: rt.target as `0x${string}`,
@@ -44,7 +42,7 @@ export const FunctionCallTransactionConfig: TransactionConfig<FunctionCallTransa
         value: 0n,
       };
     },
-    unparse: (t) => {
+    encode: (t) => {
       const signature = `${t.functionName}(${t.functionInputTypes
         .map((t) => formatAbiParameter(t as unknown as AbiParameter))
         .join(",")})`;
@@ -72,17 +70,20 @@ export const FunctionCallTransactionConfig: TransactionConfig<FunctionCallTransa
     transactionComment: () => {
       return undefined;
     },
-  };
+  }
+);
 
-export const PayableFunctionCallTransactionConfig: TransactionConfig<PayableFunctionCallTransaction> =
+export const PayableFunctionCallTransactionConfig = defineTransaction<PayableFunctionCallTransaction>(
   {
     type: "payable-function-call",
-    parse: (rt) => {
+    matches: (rt) => {
+      return BigInt(rt.value) > 0n && rt.signature !== "";
+    },
+    decode: (rt) => {
       const {
         name: functionName,
         inputs: functionInputs,
         inputTypes: functionInputTypes,
-        // calldataDecodingFailed,
       } = decodeCalldataWithSignature({
         signature: rt.signature,
         calldata: rt.calldata,
@@ -97,7 +98,7 @@ export const PayableFunctionCallTransactionConfig: TransactionConfig<PayableFunc
         value: BigInt(rt.value),
       };
     },
-    unparse: (t) => {
+    encode: (t) => {
       const signature = `${t.functionName}(${t.functionInputTypes
         .map((t) => formatAbiParameter(t as unknown as AbiParameter))
         .join(",")})`;
@@ -125,22 +126,21 @@ export const PayableFunctionCallTransactionConfig: TransactionConfig<PayableFunc
     transactionComment: () => {
       return undefined;
     },
-  };
+  }
+);
 
-export const CustomTransactionActionConfig: ActionConfig<
+export const CustomTransactionActionConfig = defineAction<
   CustomTransactionAction,
   FunctionCallTransaction | PayableFunctionCallTransaction
-> = {
+>({
   type: "custom-transaction",
+  transactions: [
+    FunctionCallTransactionConfig,
+    PayableFunctionCallTransactionConfig,
+  ],
   form: () => <CustomTransactionForm />,
   formdataToAction: dataToAction,
-  getTransactions: () => {
-    return [
-      FunctionCallTransactionConfig,
-      PayableFunctionCallTransactionConfig,
-    ];
-  },
-  resolveAction: (a) => {
+  actionToTransactions: (a) => {
     const { name: functionName, inputs: functionInputTypes } = parseAbiItem(
       `function ${a.contractCallSignature}`
     ) as AbiFunction;
@@ -168,50 +168,42 @@ export const CustomTransactionActionConfig: ActionConfig<
       },
     ];
   },
-  buildAction: (r) => {
-    // @ts-ignore
-    const parser = new TransactionParser(1, [OneTimePaymentActionConfig]);
-    // if (transactionsLeft.length === 0) return null;
-    let remainingTransactions = r;
-    const tx = remainingTransactions[0];
-    const { targets, signatures, calldatas, values } = parser.unparse([tx]);
-    remainingTransactions = remainingTransactions.slice(1);
-    const { name, inputs, inputTypes } = decodeCalldataWithSignature({
-      signature: signatures[0],
-      calldata: calldatas[0],
-    });
+  transactionsToAction: (r) => {
+    const tx = r[0];
 
-    const signature = `${name}(${inputTypes
+    // Match either function-call or payable-function-call
+    if (tx.type !== "function-call" && tx.type !== "payable-function-call") {
+      return null;
+    }
+
+    const signature = `${tx.functionName}(${tx.functionInputTypes
       .map((t) => formatAbiParameter(t))
       .join(",")})`;
 
     return {
       action: {
         type: "custom-transaction",
-        target: targets[0],
-        contractCallTarget: targets[0],
+        target: tx.target,
+        contractCallTarget: tx.target,
         contractCallSignature: signature,
-        contractCallArguments: inputs,
-        contractCallValue: Number(values[0]),
-        //   firstTransactionIndex: getTransactionIndex(tx),
+        contractCallArguments: tx.functionInputs,
+        contractCallValue: Number(tx.value),
       },
-      remainingTransactions,
+      consumed: 1,
     };
   },
-  actionSummary: (a) => {
-    return (
-      <>
-        {a.contractCallValue > 0 ? (
-          <>
-            <em>{formatUnits(BigInt(a.contractCallValue), 18)}</em> payable
-            function call
-          </>
-        ) : (
-          "Function call"
-        )}{" "}
-        to contract
-        <em>{a.contractCallTarget}</em>
-      </>
-    );
-  },
-};
+  actionSummary: (a) => (
+    <>
+      {a.contractCallValue > 0 ? (
+        <>
+          <em>{formatUnits(BigInt(a.contractCallValue), 18)}</em> payable
+          function call
+        </>
+      ) : (
+        "Function call"
+      )}{" "}
+      to contract
+      <em>{a.contractCallTarget}</em>
+    </>
+  ),
+});
