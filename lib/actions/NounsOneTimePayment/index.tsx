@@ -92,11 +92,10 @@ export const OneTimePaymentActionConfig = defineAction<
     }
   },
   transactionsToAction: (r) => {
-    const transferTx = r.find(
-      (t) => t.type === "transfer"
-    ) as TransferTransaction | null;
+    const tx = r[0];
 
-    if (transferTx != null) {
+    if (tx?.type === "transfer") {
+      const transferTx = tx as TransferTransaction;
       const action: OneTimePaymentAction = {
         type: "one-time-payment",
         target: transferTx.target,
@@ -106,11 +105,8 @@ export const OneTimePaymentActionConfig = defineAction<
       return { action, consumed: 1 };
     }
 
-    const usdcTransferTx = r.find(
-      (t) => t.type === "usdc-transfer-via-payer"
-    ) as UsdcTransferViaPayerTransaction | null;
-
-    if (usdcTransferTx != null) {
+    if (tx?.type === "usdc-transfer-via-payer") {
+      const usdcTransferTx = tx as UsdcTransferViaPayerTransaction;
       const action: OneTimePaymentAction = {
         type: "one-time-payment",
         target: usdcTransferTx.receiverAddress,

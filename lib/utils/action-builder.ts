@@ -20,7 +20,8 @@ function sortBySpecificity<A extends BaseAction, T extends { type: string }>(
 /**
  * Builds actions from an array of decoded transactions.
  * Uses a greedy algorithm that tries each action config in order (by specificity)
- * and consumes matching transactions.
+ * and consumes matching transaction prefixes. Each config must match only the
+ * leading transaction(s) of the remaining array.
  *
  * @param transactions - Array of decoded transactions
  * @param configs - Array of action configurations

@@ -57,6 +57,9 @@ export type ActionConfig<
   transactions?: TransactionConfig<any>[];
   getTransactions?: () => TransactionConfig<any>[];
   actionToTransactions: (a: A, ctx: ParserContext) => T[];
+  /**
+   * Must match the leading transaction(s) of `r`; `consumed` is the number of leading entries consumed.
+   */
   transactionsToAction: (r: T[], ctx: ParserContext) => { action: A; consumed: number } | null;
   actionSummary: (a: A) => JSX.Element;
 };

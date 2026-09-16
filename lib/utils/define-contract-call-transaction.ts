@@ -1,4 +1,4 @@
-import { encodeAbiParameters } from "viem";
+import { AbiFunction, encodeAbiParameters, parseAbiItem } from "viem";
 import {
   TransactionConfig,
   RawTransaction,
@@ -36,11 +36,9 @@ export function defineContractCallTransaction<T extends { type: string }>(
   };
 
   // Parse the signature to extract input types for encoding
-  const sigMatch = config.signature.match(/\(([^)]*)\)/);
-  const paramTypesStr = sigMatch ? sigMatch[1] : "";
-  const paramTypes = paramTypesStr
-    ? paramTypesStr.split(",").map((t) => ({ type: t.trim() }))
-    : [];
+  const { inputs: paramTypes } = parseAbiItem(
+    `function ${config.signature}`
+  ) as AbiFunction;
 
   // Auto-compute specificity: target (+4) + signature (+3)
   const hasTarget = config.target !== undefined;
@@ -58,7 +56,7 @@ export function defineContractCallTransaction<T extends { type: string }>(
 
       if (hasTarget) {
         const targetAddress = resolveTarget(ctx);
-        return rt.target === targetAddress;
+        return rt.target.toLowerCase() === targetAddress?.toLowerCase();
       }
       return true;
     },

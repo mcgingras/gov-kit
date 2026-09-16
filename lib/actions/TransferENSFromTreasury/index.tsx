@@ -36,20 +36,16 @@ export const TransferENSFromTreasuryActionConfig = defineAction<
     },
   ],
   transactionsToAction: (r) => {
-    const transferEnsTx = r.find(
-      (t) => t.type === "transfer-ens"
-    ) as TransferENSTransaction | null;
+    const tx = r[0];
+    if (tx?.type !== "transfer-ens") return null;
 
-    if (transferEnsTx != null) {
-      const action: TransferENSFromTreasuryAction = {
-        type: "transfer-ens-from-treasury",
-        receiver: transferEnsTx.receiver,
-        amount: formatUnits(transferEnsTx.value, 18),
-      };
-      return { action, consumed: 1 };
-    }
-
-    return null;
+    const transferEnsTx = tx as TransferENSTransaction;
+    const action: TransferENSFromTreasuryAction = {
+      type: "transfer-ens-from-treasury",
+      receiver: transferEnsTx.receiver,
+      amount: formatUnits(transferEnsTx.value, 18),
+    };
+    return { action, consumed: 1 };
   },
   actionSummary: (a) => (
     <>

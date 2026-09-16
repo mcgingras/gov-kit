@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { encodeAbiParameters, parseEther } from "viem";
+import { encodeAbiParameters, parseAbiParameters, parseEther } from "viem";
 import { matchTransactions, matchTransaction } from "../lib/utils/transaction-matcher";
 import { encodeTransactions } from "../lib/utils/transaction-encoder";
 import { buildActions, transactionsFromActions } from "../lib/utils/action-builder";
+import { defineContractCallTransaction } from "../lib/utils/define-contract-call-transaction";
 import { OneTimePaymentActionConfig } from "../lib/actions/NounsOneTimePayment";
 import { TransferENSFromTreasuryActionConfig } from "../lib/actions/TransferENSFromTreasury";
 import { CustomTransactionActionConfig } from "../lib/actions/CustomTransaction";
@@ -152,6 +153,36 @@ describe("Transaction matching and encoding", () => {
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe("one-time-payment");
   });
+
+  it("should build mixed actions from transaction prefixes", () => {
+    const decoded = [
+      {
+        type: "function-call" as const,
+        target: RANDOM_EOA as `0x${string}`,
+        functionName: "setValue",
+        functionInputs: [1n],
+        functionInputTypes: [{ type: "uint256" as const }],
+        value: 0n,
+      },
+      {
+        type: "transfer" as const,
+        target: "0x65A3870F48B5237f27f674Ec42eA1E017E111D63" as `0x${string}`,
+        value: 1000000000000000000n,
+      },
+    ];
+
+    const result = buildActions(
+      decoded,
+      [OneTimePaymentActionConfig, CustomTransactionActionConfig],
+      ctx
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result.map((action) => action.type)).toEqual([
+      "custom-transaction",
+      "one-time-payment",
+    ]);
+  });
 });
 
 const ENS_TOKEN_ADDRESS = "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72";
@@ -200,7 +231,7 @@ describe("Specificity and matching order", () => {
 
   it("should match transfer(address,uint256) on ENS token as transfer-ens, not generic function-call", () => {
     const raw: RawTransaction = {
-      target: ENS_TOKEN_ADDRESS,
+      target: "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72",
       signature: "transfer(address,uint256)",
       calldata: encodeAbiParameters(
         [{ type: "address" }, { type: "uint256" }],
@@ -209,8 +240,35 @@ describe("Specificity and matching order", () => {
       value: "0",
     };
 
-    const result = matchTransaction(raw, allTxConfigs, ctx);
+    const result = matchTransaction(
+      raw,
+      [
+        ...(TransferENSFromTreasuryActionConfig.transactions ?? []),
+        ...(CustomTransactionActionConfig.transactions ?? []),
+      ],
+      ctx
+    );
     expect(result.type).toBe("transfer-ens");
+  });
+
+  it("should propagate ENS decode errors instead of falling back to function-call", () => {
+    const raw: RawTransaction = {
+      target: "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72",
+      signature: "transfer(address,uint256)",
+      calldata: "0x1234",
+      value: "0",
+    };
+
+    expect(() =>
+      matchTransaction(
+        raw,
+        [
+          ...(TransferENSFromTreasuryActionConfig.transactions ?? []),
+          ...(CustomTransactionActionConfig.transactions ?? []),
+        ],
+        ctx
+      )
+    ).toThrow();
   });
 
   it("should match transfer(address,uint256) on a random address as generic function-call", () => {
@@ -323,5 +381,36 @@ describe("Specificity and matching order", () => {
     expect(actions[0].type).toBe("transfer-ens-from-treasury");
     expect(actions[1].type).toBe("one-time-payment");
     expect(actions[2].type).toBe("one-time-payment");
+  });
+});
+
+describe("Contract call transaction definitions", () => {
+  it("should parse and encode nested tuple parameters", () => {
+    const config = defineContractCallTransaction<{
+      type: "set-config";
+      target: `0x${string}`;
+      args: readonly unknown[];
+    }>({
+      type: "set-config",
+      signature: "setConfig((address,uint256),bytes)",
+      decode: (target, args) => ({ type: "set-config", target, args }),
+      encode: (t) => ({ args: t.args }),
+    });
+    const args = [
+      ["0x65A3870F48B5237f27f674Ec42eA1E017E111D63", 1n],
+      "0x",
+    ] as const;
+
+    const encoded = config.encode(
+      { type: "set-config", target: RANDOM_EOA, args },
+      ctx
+    );
+
+    expect(encoded.calldata).toBe(
+      encodeAbiParameters(parseAbiParameters("(address,uint256),bytes"), args)
+    );
+
+    const decoded = config.decode(encoded, ctx);
+    expect(decoded.args).toEqual(args);
   });
 });

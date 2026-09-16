@@ -80,10 +80,9 @@ export function matchTransaction<T extends { type: string }>(
 
   // Find the first matching config
   for (const config of configs) {
+    let matches = false;
     try {
-      if (config.matches(rawTx, ctx)) {
-        return config.decode(rawTx, ctx);
-      }
+      matches = config.matches(rawTx, ctx);
     } catch (error) {
       // If a matcher throws, continue to next one
       if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
@@ -93,6 +92,7 @@ export function matchTransaction<T extends { type: string }>(
         );
       }
     }
+    if (matches) return config.decode(rawTx, ctx);
   }
 
   // No match found
